@@ -1,0 +1,1 @@
+# the model generates multiple response and selects  the most consistent or common output
