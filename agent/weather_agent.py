@@ -1,11 +1,31 @@
 from dotenv import load_dotenv
 from openai import OpenAI
+import json
+import requests
+import os
 load_dotenv()
 
 
 client = OpenAI()
 def get_weather(city:str):
-    return "31 degree celcius"
+    if(not city):
+        return "city is required feild"
+    response = requests.get(f"https://wttr.in/{city}?format=%C+%d")
+    return response.text
+
+def run_command(command: str):
+    results  = os.system(command=command)
+    return results
+available_tools={
+    "get_weather":{
+        "fn":get_weather,
+        "description":"Takes a city name as an input and return the current city's weather"
+    },
+    "run_command":{
+        "fn":run_command,
+        "description":"this function takes a command as an input and executes the command in the system."
+    }
+}
 system_prompt="""
 You are an helpful AI assistant who is specialized in resolving user query 
 You work on start, plan , action ,observe mode.
@@ -26,6 +46,8 @@ Output JSON format:
 }}
 
 Available Tools:
+- get_weather: "Takes a city name as an input and return the current city's weather"
+- run_command: "this function takes a command as an input and executes the command in the system."
 example:
 user Query: What is the weather of new york 
 Output:{{"step":"plan" , "content":"The user is intrested in weather data of new york" }}
@@ -42,5 +64,38 @@ response = client.completions.create(
         "role":"user", "content":"what is the current weather of jaipur"
     }]
 )
- 
-print(response.choices[0].message.content )
+messages = [
+    {"role":"system","content":system_prompt}
+    
+]
+
+user_query=input(">")
+
+messages.append({"role":"user","content":user_query})
+while True:
+    response = client.completions.create(
+    model= "gpt-4o",
+    response_format={"type":"json_object"},
+    messages=messages
+    
+)
+    parsed_output = json.loads(response.choices[0].message.content)
+    messages.append({"role":"assistant","content":json.dumps(parsed_output)})
+    
+    if parsed_output.get("step")=="plan":
+        print(f"🧠: {parsed_output.get("content")}")
+        continue
+    if parsed_output.get("step")=="action":
+        print(f" : calling the function {parsed_output.get("function")}")
+        tool_name= parsed_output.get("function")
+        tool_input= parsed_output.get("input")
+        if available_tools.get(tool_name,False)!=False:
+            output=available_tools["get_weather"].get("fn")(tool_input)
+            messages.append({"role":"assistant","content":json.dumps({"step":"observe","output":output})})
+            
+    if parsed_output.get("step")=="output":
+        print(f"📝: {parsed_output.get("content")}")
+        break
+        
+        
+print("Done :)")
